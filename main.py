@@ -1,160 +1,180 @@
-import pygame
+import numpy as np
 import random
-
-pygame.init()
-
-# Размеры поля
-WIDTH, HEIGHT = 360, 600  # Увеличил ширину
-BLOCK_SIZE = 30
-COLUMNS, ROWS = WIDTH // BLOCK_SIZE, HEIGHT // BLOCK_SIZE
-
-# Цвета
-WHITE = (255, 255, 255)
-GRAY = (128, 128, 128)
-PURPLE = (128, 0, 128)
-PINK = (255, 0, 128)
-GREEN = (0, 255, 0)
-RED = (255, 0, 0)
-BLUE = (0, 0, 255)
-YELLOW = (255, 255, 0)
-CYAN = (0, 255, 255)
-MAGENTA = (255, 0, 255)
-BLACK = (0, 0, 0)
-COLORS = [(0, 255, 255), (0, 0, 255), (255, 165, 0), (255, 255, 0),
-          (0, 255, 0), (128, 0, 128), (255, 0, 0)]
-
-# Фигуры тетриса
-SHAPES = [
-    [[1, 1, 1, 1]],  # I
-    [[1, 1, 1], [0, 1, 0]],  # T
-    [[1, 1, 1], [1, 0, 0]],  # L
-    [[1, 1, 1], [0, 0, 1]],  # J
-    [[1, 1], [1, 1]],  # O
-    [[0, 1, 1], [1, 1, 0]],  # S
-    [[1, 1, 0], [0, 1, 1]]  # Z
-]
+import pygame
+from copy import deepcopy
 
 
-class Tetromino:
-    def __init__(self, x, y, shape):
-        self.x, self.y = x, y
-        self.shape = shape
-        self.color = random.choice(COLORS)
+class SudokuGame:
+    def __init__(self):
+        pygame.init()
+        self.window_size = 540
+        self.cell_size = self.window_size // 9
+        self.screen = pygame.display.set_mode((self.window_size, self.window_size + 60))
+        pygame.display.set_caption("Судоку")
+        self.font = pygame.font.Font(None, 40)
+        self.selected = None
+        self.lives = 3
+        self.level = 1
+        self.create_new_level()
 
-    def rotate(self):
-        self.shape = [list(row) for row in zip(*self.shape[::-1])]
+    def create_new_level(self):
+        empty_cells = self.increase_difficulty()
+        self.board = self.generate_sudoku(empty_cells)
+        self.original_board = deepcopy(self.board)
+        self.solution = deepcopy(self.board)
+        self.solve(self.solution)
+        self.lives = 3
 
+    def increase_difficulty(self):
+        difficulties = {
+            1: 1,  # Легкий уровень
+            2: 5,  # Средний уровень
+            3: 10,  # Сложный уровень
+            4: 15,  # Очень сложный уровень
+            5: 20,  # Экспертный уровень
+        }
+        return difficulties.get(self.level, 45)
 
-# Проверка столкновений
-def collision(board, shape, x, y):
-    for row_idx, row in enumerate(shape):
-        for col_idx, cell in enumerate(row):
-            if cell and (x + col_idx < 0 or x + col_idx >= COLUMNS or y + row_idx >= ROWS or board[y + row_idx][
-                x + col_idx]):
-                return True
-    return False
+    def is_valid(self, board, row, col, num):
+        for i in range(9):
+            if board[row][i] == num or board[i][col] == num:
+                return False
+        start_row, start_col = (row // 3) * 3, (col // 3) * 3
+        for i in range(3):
+            for j in range(3):
+                if board[start_row + i][start_col + j] == num:
+                    return False
+        return True
 
+    def solve(self, board):
+        for row in range(9):
+            for col in range(9):
+                if board[row][col] == 0:
+                    for num in range(1, 10):
+                        if self.is_valid(board, row, col, num):
+                            board[row][col] = num
+                            if self.solve(board):
+                                return True
+                            board[row][col] = 0
+                    return False
+        return True
 
-# Очистка заполненных линий
-def clear_lines(board, score, combo):
-    full_rows = [i for i in range(ROWS) if all(board[i])]
-    for row in full_rows:
-        del board[row]
-        board.insert(0, [0] * COLUMNS)
-    if full_rows:
-        combo += 1
-        score += 100 * combo
-    else:
-        combo = 0
-    return len(full_rows), score, combo
+    def generate_sudoku(self, empty_cells):
+        board = np.zeros((9, 9), dtype=int)
+        for _ in range(17):
+            row, col, num = random.randint(0, 8), random.randint(0, 8), random.randint(1, 9)
+            while not self.is_valid(board, row, col, num) or board[row][col] != 0:
+                row, col, num = random.randint(0, 8), random.randint(0, 8), random.randint(1, 9)
+            board[row][col] = num
 
+        board_copy = deepcopy(board)
+        self.solve(board_copy)
 
-def main():
-    score = 0
-    combo = 0
-    try:
-        with open("highscore.txt", "r") as f:
-            highscore = int(f.read())
-    except FileNotFoundError:
-        highscore = 0
+        indices = list(range(81))
+        random.shuffle(indices)
+        for i in indices[:empty_cells]:
+            board[i // 9][i % 9] = 0
 
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    clock = pygame.time.Clock()
-    board = [[0] * COLUMNS for _ in range(ROWS)]
-    current_piece = Tetromino(COLUMNS // 2 - 1, 0, random.choice(SHAPES))
-    running, game_over = True, False
-    fall_time, fast_fall = 0, False
+        return board
 
-    while running:
-        screen.fill(WHITE)
-        fall_time += clock.get_rawtime()
-        clock.tick(60)
+    def draw_hearts(self):
+        heart_size = 20
+        for i in range(3):
+            color = (255, 0, 0) if i < self.lives else (0, 0, 0)
+            pygame.draw.polygon(self.screen, color, [
+                (50 + i * 40, 20),
+                (60 + i * 40, 10),
+                (70 + i * 40, 20),
+                (60 + i * 40, 30)
+            ])
 
-        if fall_time > (10 if fast_fall else 50):
-            if not collision(board, current_piece.shape, current_piece.x, current_piece.y + 1):
-                current_piece.y += 1
-            else:
-                for row_idx, row in enumerate(current_piece.shape):
-                    for col_idx, cell in enumerate(row):
-                        if cell:
-                            board[current_piece.y + row_idx][current_piece.x + col_idx] = current_piece.color
-                score += 10
-                cleared, score, combo = clear_lines(board, score, combo)
-                current_piece = Tetromino(COLUMNS // 2 - 1, 0, random.choice(SHAPES))
-                if collision(board, current_piece.shape, current_piece.x, current_piece.y):
-                    game_over = True
+    def draw_level(self):
+        level_text = self.font.render(f"Уровень: {self.level}", True, (0, 0, 0))
+        self.screen.blit(level_text, (self.window_size - 150, 15))
+
+    def draw_grid(self):
+        self.screen.fill((255, 255, 255))
+        pygame.draw.rect(self.screen, (240, 240, 240), (0, 0, self.window_size, 60))
+        self.draw_hearts()
+        self.draw_level()
+
+        for i in range(10):
+            line_width = 3 if i % 3 == 0 else 1
+            pygame.draw.line(self.screen, (0, 0, 0),
+                             (i * self.cell_size, 60),
+                             (i * self.cell_size, self.window_size + 60), line_width)
+            pygame.draw.line(self.screen, (0, 0, 0),
+                             (0, i * self.cell_size + 60),
+                             (self.window_size, i * self.cell_size + 60), line_width)
+
+    def draw_numbers(self):
+        for i in range(9):
+            for j in range(9):
+                if self.board[i][j] != 0:
+                    color = (0, 0, 255) if self.original_board[i][j] == 0 else (0, 0, 0)
+                    number = self.font.render(str(self.board[i][j]), True, color)
+                    x = j * self.cell_size + (self.cell_size - number.get_width()) // 2
+                    y = i * self.cell_size + 60 + (self.cell_size - number.get_height()) // 2
+                    self.screen.blit(number, (x, y))
+
+    def highlight_selected(self):
+        if self.selected:
+            row, col = self.selected
+            pygame.draw.rect(self.screen, (255, 255, 0),
+                             (col * self.cell_size, row * self.cell_size + 60,
+                              self.cell_size, self.cell_size), 3)
+
+    def check_game_over(self):
+        if self.lives <= 0:
+            game_over_text = self.font.render(f"Игра окончена! Уровень: {self.level}", True, (255, 0, 0))
+            self.screen.blit(game_over_text, (self.window_size // 4, self.window_size // 2))
+            pygame.display.flip()
+            pygame.time.wait(3000)
+            return True
+        return False
+
+    def check_level_complete(self):
+        if np.array_equal(self.board, self.solution):
+            self.level += 1
+            self.create_new_level()
+
+    def run(self):
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     running = False
-            fall_time = 0
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    pos = pygame.mouse.get_pos()
+                    if pos[1] > 60:
+                        col = pos[0] // self.cell_size
+                        row = (pos[1] - 60) // self.cell_size
+                        self.selected = (row, col)
+                if event.type == pygame.KEYDOWN and self.selected:
+                    row, col = self.selected
+                    if self.original_board[row][col] == 0:
+                        if event.key in [pygame.K_1, pygame.K_2, pygame.K_3,
+                                         pygame.K_4, pygame.K_5, pygame.K_6,
+                                         pygame.K_7, pygame.K_8, pygame.K_9]:
+                            num = int(event.unicode)
+                            if num != self.solution[row][col]:
+                                self.lives -= 1
+                                if self.check_game_over():
+                                    running = False
+                            else:
+                                self.board[row][col] = num
+                                self.check_level_complete()
+                        elif event.key == pygame.K_BACKSPACE:
+                            self.board[row][col] = 0
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_LEFT and not collision(board, current_piece.shape, current_piece.x - 1,
-                                                                current_piece.y):
-                    current_piece.x -= 1
-                if event.key == pygame.K_RIGHT and not collision(board, current_piece.shape, current_piece.x + 1,
-                                                                 current_piece.y):
-                    current_piece.x += 1
-                if event.key == pygame.K_DOWN:
-                    fast_fall = True
-                if event.key == pygame.K_UP:
-                    rotated_shape = [list(row) for row in zip(*current_piece.shape[::-1])]
-                    if not collision(board, rotated_shape, current_piece.x, current_piece.y):
-                        current_piece.shape = rotated_shape
-            elif event.type == pygame.KEYUP:
-                if event.key == pygame.K_DOWN:
-                    fast_fall = False
+            self.draw_grid()
+            self.draw_numbers()
+            self.highlight_selected()
+            pygame.display.flip()
 
-        for y in range(ROWS):
-            for x in range(COLUMNS):
-                rect = pygame.Rect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE)
-                pygame.draw.rect(screen, GRAY, rect, 1)
-                if board[y][x]:
-                    pygame.draw.rect(screen, board[y][x], rect)
-
-        for row_idx, row in enumerate(current_piece.shape):
-            for col_idx, cell in enumerate(row):
-                if cell:
-                    rect = pygame.Rect((current_piece.x + col_idx) * BLOCK_SIZE,
-                                       (current_piece.y + row_idx) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE)
-                    pygame.draw.rect(screen, current_piece.color, rect)
-
-        font = pygame.font.Font(None, 36)
-        score_text = font.render(f'Score: {score}', True, (0, 0, 0))
-        screen.blit(score_text, (10, 10))
-        highscore_text = font.render(f'High Score: {highscore}', True, (0, 0, 0))
-        screen.blit(highscore_text, (10, 40))
-        pygame.display.flip()
-
-    if score > highscore:
-        highscore = score
-        with open("highscore.txt", "w") as f:
-            f.write(str(highscore))
-
-    print(f"Game Over! Final Score: {score} | High Score: {highscore}")
-    pygame.quit()
+        pygame.quit()
 
 
 if __name__ == "__main__":
-    main()
+    game = SudokuGame()
+    game.run()
